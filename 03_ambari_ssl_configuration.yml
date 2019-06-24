@@ -1,0 +1,39 @@
+- name: Create csr file and send it to ansible server
+  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
+  become: yes
+  tasks:
+  - name: Convert the Ambari server cert to PEM format
+    shell: openssl x509 -in /etc/security/serverKeys/certs/$(hostname -f).crt -out /etc/security/serverKeys/certs/$(hostname -f).pem -outform PEM
+    when: "'AMBARI_SERVER' in group_names"
+
+  - name: Convert the Keystore to pem
+    block:
+    - shell: keytool -importkeystore -srckeystore /etc/security/serverKeys/jks/keystore.jks -destkeystore /etc/security/serverKeys/jks/$(hostname -f).p12 -srcalias $(hostname -f) -srcstoretype jks -deststoretype pkcs12 -storepass Big_59_Data -srcstorepass Big_59_Data
+    - shell: openssl pkcs12 -in /etc/security/serverKeys/jks/$(hostname -f).p12 -out /etc/security/serverKeys/jks/$(hostname -f).pem -passout pass:Big_59_Data -passin pass:Big_59_Data
+    when: "'AMBARI_SERVER' in group_names"
+
+  - name: Set the Ambari security facts
+    block:
+    - name: Set options to ambari-server setup-security command
+      set_fact:
+        ambari_security_options: "--security-option=setup-https \
+                                  --api-ssl=true \
+                                  --api-ssl-port=8443 \
+                                  --import-cert-path=/etc/security/serverKeys/certs/{{ inventory_hostname|lower }}.pem \
+                                  --import-key-path=/etc/security/serverKeys/jks/{{ inventory_hostname|lower }}.pem \
+                                  --pem-password=Big_59_Data"
+
+    - name: Update the Ambari security
+      command: ambari-server setup-security "{{ ambari_security_options }}"
+    when: "'AMBARI_SERVER' in group_names"
+
+  - name: Restart ambari server
+    block:
+      - name: Restart ambari server via ambari-server api
+        command: ambari-server restart
+
+      - name: Ensure that ambari-server systemd process is enabled
+        systemd:
+          name: ambari-server
+          enabled: yes
+    when: "'AMBARI_SERVER' in group_names"

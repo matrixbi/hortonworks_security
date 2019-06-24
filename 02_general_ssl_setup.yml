@@ -1,0 +1,65 @@
+- name: Create csr file and send it to ansible server
+  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
+  become: yes
+  tasks:
+  - import_role:
+      name: update-ca-trust
+
+  - name: Copy all nodes cetificates to every node
+    copy:
+      src: /home/dba/ssl/certs/{{ item }}.crt
+      dest: /etc/security/serverKeys/certs
+    with_items:
+      - "{{ ansible_play_batch|lower }}"
+
+  - name: Copy all nodes java keystores to every node
+    copy:
+      src: /home/dba/ssl/jks/{{ item }}-keystore.jks
+      dest: /etc/security/serverKeys/jks/
+    with_items:
+      - "{{ ansible_play_batch|lower }}"
+
+  - name: Create copy of keystore file with generic name
+    copy:
+      remote_src: yes
+      src: /etc/security/serverKeys/jks/{{ inventory_hostname|lower }}-keystore.jks
+      dest: /etc/security/serverKeys/jks/keystore.jks
+
+  - name: Import ROOT and INT CAs to keystore
+    shell: keytool -import -alias {{ item.alias }} -trustcacerts -file /etc/security/serverKeys/certs/{{ item.cer }} -keystore /etc/security/serverKeys/jks/{{ inventory_hostname|lower }}-keystore.jks -storepass Big_59_Data
+    with_items:
+      - { cert: 'RootCA.cer', alias: 'rootca' }
+      - { cert: 'SubCA.cer', alias: 'intca' }
+    ignore_errors: True
+
+  - name: Import certs into node keystore
+    java_cert:
+      cert_alias: "{{ item.alias | default( item ) }}"
+      cert_path: /etc/security/serverKeys/certs/{{ item.cert | default( item ~ '.crt' ) }}
+      keystore_path: /etc/security/serverKeys/jks/keystore.jks
+      keystore_pass: Big_59_Data
+      state: present
+    with_items:
+      - { cert: 'RootCA.cer', alias: 'rootca' }
+      - { cert: 'SubCA.cer', alias: 'intca' }
+      - "{{ ansible_play_batch|lower }}"
+
+  - name: Import certs into node truststore
+    java_cert:
+      cert_alias: "{{ item.alias | default( item ) }}"
+      cert_path: /etc/security/serverKeys/certs/{{ item.cert | default( item ~ '.crt' ) }}
+      keystore_path: /etc/security/serverKeys/jks/truststore.jks
+      keystore_pass: Big_59_Data
+      keystore_create: yes
+      state: present
+    with_items:
+      - { cert: 'RootCA.cer', alias: 'rootca' }
+      - { cert: 'SubCA.cer', alias: 'intca' }
+      - "{{ ansible_play_batch|lower }}"
+
+  - name: Import ROOT and INT CAs to truststore
+    shell: keytool -import -alias {{ item.alias }} -trustcacerts -file /etc/security/serverKeys/certs/{{ item.cer }} -keystore /etc/security/serverKeys/jks/truststore.jks -storepass Big_59_Data
+    with_items:
+      - { cert: 'RootCA.cer', alias: 'rootca' }
+      - { cert: 'SubCA.cer', alias: 'intca' }
+    ignore_errors: True

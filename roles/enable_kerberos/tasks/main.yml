@@ -1,0 +1,217 @@
+- name: Add the KERBEROS Service to cluster
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/services/KERBEROS
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Add the KERBEROS_CLIENT component to the KERBEROS service
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/services/KERBEROS/components/KERBEROS_CLIENT
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Create and set KERBEROS service configurations
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}
+    method: PUT
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: "{{ lookup('file','kerberos_config.json') }}"
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Create the KERBEROS_CLIENT host components (once for each host)
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/hosts?Hosts/host_name={{ item }}
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"host_components" : [{"HostRoles" : {"component_name":"KERBEROS_CLIENT"}}]}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+  with_items: "{{ ansible_play_batch }}"
+
+- name: Install the KERBEROS service and components
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/services/KERBEROS
+    method: PUT
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"Install kerberos clients via REST"},"ServiceInfo":{"state":"INSTALLED"}}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Stop all services
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/services
+    method: PUT
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"Stop all services via REST"},"ServiceInfo":{"state":"INSTALLED"}}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  register: returned_from_cluster
+  until: returned_from_cluster.status == 202
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Waiting for all services will stop"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 600
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Get the default Kerberos Descriptor
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/stacks/HDF/versions/3.2/artifacts/kerberos_descriptor
+    method: GET
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+  register: kerberos_descriptor
+
+- name: Set the Kerberos Descriptor
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/artifacts/kerberos_descriptor
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: "{{ lookup('file','kerberos_descriptor.json') }}"
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Set OU organization admin user
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/credentials/kdc.admin.credential
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: '{"Credential" : {"principal" : "app_hortonsvc@MAC.ORG.IL", "key" : "Hort0n@W","type" : "temporary"}}'
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: Enable Kerberos
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}
+    method: PUT
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: "{{ lookup('file','enable_kerberos.json') }}"
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  register: returned_from_cluster
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Waiting for kerberos enabling"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 600
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+# - name: sleep for 60 seconds and continue with play
+#   wait_for: timeout=60
+
+- name: Restart all services with stale configuration
+  uri:
+    url: http://{{ inventory_hostname }}:8080/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/requests
+    method: POST
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"Restart all services with stale configuration via REST","operational_level": "host_component","command": "RESTART"},"Requests/resource_filters": [{"hosts_predicate": "HostRoles/stale_configs=true&HostRoles/cluster_name={{ hostvars[inventory_hostname].cluster_name }}"}]}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  register: returned_from_cluster
+  until: returned_from_cluster.status == 202
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Waiting for all services will restart"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 600
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"

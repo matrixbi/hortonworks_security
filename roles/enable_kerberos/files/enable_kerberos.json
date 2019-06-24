@@ -1,0 +1,11 @@
+{
+  "session_attributes" : {
+    "kerberos_admin" : {
+      "principal" : "app_hortonsvc@MAC.ORG.IL",
+      "password" : "Hort0n@W"
+    }
+  },
+  "Clusters": {
+    "security_type" : "KERBEROS"
+  }
+}

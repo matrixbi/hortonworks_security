@@ -1,0 +1,45 @@
+- name: set fact for action Stop
+  set_fact:
+    state: "INSTALLED"
+  when: action == "Stop"
+
+- name: set fact for action Start
+  set_fact:
+    state: "STARTED"
+  when: action == "Start"
+
+- name: "{{ action }} {{ service }}"
+  uri:
+    url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/services/{{ service }}
+    method: PUT
+    force_basic_auth: yes
+    validate_certs: no
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"{{ action }} {{service}} via REST"},"ServiceInfo":{"state":"{{ state }}"}}
+    status_code: 200,201,202
+    body_format: json
+    timeout: 120
+    return_content: yes
+  register: returned_from_cluster
+  until: returned_from_cluster.status == 202
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+
+- name: "Waiting for {{ service }} will {{ action }}"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"

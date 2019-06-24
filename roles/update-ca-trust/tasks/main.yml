@@ -1,0 +1,29 @@
+- name: Create certificates directory
+  file:
+    path: /etc/security/serverKeys/certs
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
+
+- name: Enable update-ca-trust utility
+  shell: update-ca-trust force-enable
+
+- name: Copy certificate files to instances
+  copy:
+    src: "{{ item }}"
+    dest: /etc/security/serverKeys/certs/
+  register: "crts"
+  with_fileglob:
+    - "*.cer"
+
+- name: Copy certificate files to the anchros folder
+  copy:
+    remote_src: yes
+    src: "{{ item.dest }}"
+    dest: /etc/pki/ca-trust/source/anchors/
+  with_items:
+    - "{{ crts.results }}"
+
+- name: Insert certificates to OS
+  shell: update-ca-trust extract
