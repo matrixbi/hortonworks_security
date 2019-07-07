@@ -1,27 +1,19 @@
----
-- name: Schema Registry SSL Conf
-  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
-  become: yes
-  vars:
-    ambari_admin_user: "admin"
-    ambari_admin_password: "admin"
-  tasks:
-  - name: "Edit the server section in /var/lib/ambari-server/resources/mpacks/hdf-ambari-mpack-3.4.0.0-155/common-services/REGISTRY/0.3.0/package/templates/registry.yaml.j2"
-    replace:
-      path: "/var/lib/ambari-server/resources/mpacks/hdf-ambari-mpack-3.4.0.0-155/common-services/REGISTRY/0.3.0/package/templates/registry.yaml.j2"
-      regexp: '^    - type: http$'
-      replace: '    - type: https\n      keyStorePath: /etc/security/serverKeys/jks/keystore.jks\n      keyStorePassword: Big_59_Data\n      validateCerts: false\n      validatePeers: false'
-    when: "'AMBARI_SERVER' in group_names"
+- name: "Edit the server section in /var/lib/ambari-server/resources/mpacks/hdf-ambari-mpack-3.4.0.0-155/common-services/REGISTRY/0.3.0/package/templates/registry.yaml.j2"
+  replace:
+    path: "/var/lib/ambari-server/resources/mpacks/hdf-ambari-mpack-3.4.0.0-155/common-services/REGISTRY/0.3.0/package/templates/registry.yaml.j2"
+    regexp: '^    - type: http$'
+    replace: '    - type: https\n      keyStorePath: /etc/security/serverKeys/jks/keystore.jks\n      keyStorePassword: {{ security_password }}\n      validateCerts: false\n      validatePeers: false'
+  when: "'AMBARI_SERVER' in group_names"
 
-  - name: "Restart ambari server and agent"
-    shell: ambari-{{ item }} restart
-    with_items:
-      - server
-      - agent
-    when: "'AMBARI_SERVER' in group_names"
+- name: "Restart ambari server and agent"
+  shell: ambari-{{ item }} restart
+  with_items:
+    - server
+    - agent
+  when: "'AMBARI_SERVER' in group_names"
 
-  - name: Restart Schema Registry service and waiting for tasks finish
-    include: included_start_or_stop_ambari_services.yml service="REGISTRY" action={{ item }}
-    with_items:
-      - Stop
-      - Start
+- name: Restart Schema Registry service and waiting for tasks finish
+  include: included_start_or_stop_ambari_services.yml service="REGISTRY" action={{ item }}
+  with_items:
+    - Stop
+    - Start

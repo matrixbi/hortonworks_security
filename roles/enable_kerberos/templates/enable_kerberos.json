@@ -1,8 +1,8 @@
 {
   "session_attributes" : {
     "kerberos_admin" : {
-      "principal" : "app_hortonsvc@MAC.ORG.IL",
-      "password" : "Hort0n@W"
+      "principal" : "{{ ldap_ou_admin_principal }}",
+      "password" : "{{ ldap_ou_admin_password }}"
     }
   },
   "Clusters": {
