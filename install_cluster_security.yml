@@ -1,4 +1,4 @@
-- name: Create csr file and send it to ansible server
+- name: Configure Kerberos and SSL on Hortonworks (HDF/HDP) cluster
   hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
   become: yes
   vars_files:
