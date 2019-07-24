@@ -29,6 +29,7 @@
     - { key: "ranger.ldap.ad.referral", value: "follow" } 
     - { key: "ranger.ldap.ad.user.searchfilter", value: '\{\{ranger_ug_ldap_user_searchfilter\}\}' } 
     - { key: "ranger.ldap.ad.bind.password", value: "{{ ldap_ou_admin_password }}" } 
+    - { key: "ranger.audit.solr.urls", value: "https://{{ inventory_hostname }}:8886/solr/ranger_audits" } 
   when: "'AMBARI_SERVER' in group_names"
 
 - name: Configure SSL for ranger-ugsync-site

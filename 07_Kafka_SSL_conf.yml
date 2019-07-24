@@ -2,6 +2,25 @@
     general_configpy_args: "--host={{ inventory_hostname|lower }} --port=8443 --protocol=https --action=set --cluster={{ hostvars[inventory_hostname].cluster_name }} --user={{ ambari_admin_user }} --password={{ ambari_admin_password }} --unsafe"
   when: "'AMBARI_SERVER' in group_names"
 
+- name: "Create copy the existing keystores and change the alias of the key"
+  block:
+    - copy:
+        remote_src: yes
+        src: /etc/security/serverKeys/jks/{{ item }}.jks
+        dest: /etc/security/serverKeys/jks/kafka_{{ item }}.jks
+      with_items:
+        - keystore
+        - truststore
+    - shell: "keytool -changealias -keystore /etc/security/serverKeys/jks/kafka_keystore.jks -alias {{ inventory_hostname|lower }} -destalias kafka-key -storepass {{ security_password }}"
+
+- shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-kafka-policymgr-ssl --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
+  with_items:
+    - { key: "xasecure.policymgr.clientssl.keystore", value: "/etc/security/serverKeys/jks/kafka_keystore.jks" }
+    - { key: "xasecure.policymgr.clientssl.keystore.password", value: "{{ security_password }}" }
+    - { key: "xasecure.policymgr.clientssl.truststore", value: "/etc/security/serverKeys/jks/kafka_truststore.jks" }
+    - { key: "xasecure.policymgr.clientssl.truststore.password", value: "{{ security_password }}" }
+  when: "'AMBARI_SERVER' in group_names"
+
 - name: Enable Kafka-plugin in ranger
   block:
     - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-kafka-plugin-properties --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
@@ -55,9 +74,9 @@
         - { key: "listeners", value: "SASL_SSL://localhost:6670" } 
         - { key: "port", value: "6670" } 
         - { key: "security.inter.broker.protocol", value: "SASL_SSL" } 
-        - { key: "ssl.keystore.location", value: "/etc/security/serverKeys/jks/keystore.jks" } 
+        - { key: "ssl.keystore.location", value: "/etc/security/serverKeys/jks/kafka_keystore.jks" } 
         - { key: "ssl.keystore.password", value: "{{ security_password }}" } 
-        - { key: "ssl.truststore.location", value: "/etc/security/serverKeys/jks/truststore.jks" } 
+        - { key: "ssl.truststore.location", value: "/etc/security/serverKeys/jks/kafka_truststore.jks" } 
         - { key: "ssl.truststore.password", value: "{{ security_password }}" } 
         - { key: "ssl.key.password", value: "{{ security_password }}" } 
         - { key: "security.protocol", value: "SSL" } 
