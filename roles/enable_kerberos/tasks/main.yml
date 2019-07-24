@@ -32,7 +32,7 @@
     user: "{{ ambari_admin_user }}"
     password: "{{ ambari_admin_password }}"
     headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
-    body: "{{ lookup('file','kerberos_config.json') }}"
+    body: "{{ lookup('template','kerberos_config.json') }}"
     body_format: json
     timeout: 120
     return_content: yes
@@ -141,7 +141,7 @@
     user: "{{ ambari_admin_user }}"
     password: "{{ ambari_admin_password }}"
     headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
-    body: '{"Credential" : {"principal" : "app_hortonsvc@MAC.ORG.IL", "key" : "Hort0n@W","type" : "temporary"}}'
+    body: '{"Credential" : {"principal" : "{{ ldap_ou_admin_principal }}", "key" : "{{ ldap_ou_admin_password }}","type" : "temporary"}}'
     body_format: json
     timeout: 120
     return_content: yes
@@ -156,7 +156,7 @@
     user: "{{ ambari_admin_user }}"
     password: "{{ ambari_admin_password }}"
     headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
-    body: "{{ lookup('file','enable_kerberos.json') }}"
+    body: "{{ lookup('template','enable_kerberos.json') }}"
     body_format: json
     timeout: 120
     return_content: yes
@@ -178,9 +178,6 @@
   retries: 600
   delay: 1
   when: "'AMBARI_SERVER' in group_names"
-
-# - name: sleep for 60 seconds and continue with play
-#   wait_for: timeout=60
 
 - name: Restart all services with stale configuration
   uri:

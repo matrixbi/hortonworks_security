@@ -1,14 +1,5 @@
----
-- name: Install and enable KERBEROS
-  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
-  become: yes
-  vars:
-    ambari_admin_user: "admin"
-    ambari_admin_password: "admin"
-  tasks:
+- import_role:
+    name: update-ca-trust
 
-  - import_role:
-      name: update-ca-trust
-
-  - import_role:
-      name: enable_kerberos
+- import_role:
+    name: enable_kerberos

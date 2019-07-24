@@ -1,87 +1,138 @@
-- name: Create Kafka SSL Conf
-  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
-  become: yes
-  vars:
-    ambari_admin_user: "admin"
-    ambari_admin_password: "admin"
-  tasks:
-  - set_fact:
-      general_configpy_args: "--host={{ inventory_hostname|lower }} --port=8443 --protocol=https --action=set --cluster=HDF_SYS --user={{ ambari_admin_user }} --password={{ ambari_admin_password }} --unsafe"
+- set_fact:
+    general_configpy_args: "--host={{ inventory_hostname|lower }} --port=8443 --protocol=https --action=set --cluster={{ hostvars[inventory_hostname].cluster_name }} --user={{ ambari_admin_user }} --password={{ ambari_admin_password }} --unsafe"
+  when: "'AMBARI_SERVER' in group_names"
 
-  - name: "Configure SSL for Kafka"
-    block:
-      - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=kafka-broker --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
-        with_items:
-          - { key: "listeners", value: "SASL_SSL://localhost:6670" } 
-          - { key: "port", value: "6670" } 
-          - { key: "security.inter.broker.protocol", value: "SASL_SSL" } 
-          - { key: "ssl.keystore.location", value: "/etc/security/serverKeys/jks/keystore.jks" } 
-          - { key: "ssl.keystore.password", value: "Big_59_Data" } 
-          - { key: "ssl.truststore.location", value: "/etc/security/serverKeys/jks/truststore.jks" } 
-          - { key: "ssl.truststore.password", value: "Big_59_Data" } 
-          - { key: "ssl.key.password", value: "Big_59_Data" } 
-          - { key: "security.protocol", value: "SSL" } 
-          - { key: "ssl.client.auth", value: "none" } 
-          - { key: "ssl.enable.protocols", value: "TLSv1.2,TLSv1.1,TLSv1" } 
-          - { key: "ssl.keystore.type", value: "JKS" } 
-          - { key: "ssl.truststore.type", value: "JKS" } 
-          - { key: "authorizer.class.name", value: "org.apache.ranger.authorization.kafka.authorizer.RangerKafkaAuthorizer" } 
+- name: "Create copy the existing keystores and change the alias of the key"
+  block:
+    - copy:
+        remote_src: yes
+        src: /etc/security/serverKeys/jks/{{ item }}.jks
+        dest: /etc/security/serverKeys/jks/kafka_{{ item }}.jks
+      with_items:
+        - keystore
+        - truststore
+    - shell: "keytool -changealias -keystore /etc/security/serverKeys/jks/kafka_keystore.jks -alias {{ inventory_hostname|lower }} -destalias kafka-key -storepass {{ security_password }}"
 
-      - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-kafka-plugin-properties --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
-        with_items:
-          - { key: "ranger-kafka-plugin-enabled", value: "Yes" } 
+- shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-kafka-policymgr-ssl --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
+  with_items:
+    - { key: "xasecure.policymgr.clientssl.keystore", value: "/etc/security/serverKeys/jks/kafka_keystore.jks" }
+    - { key: "xasecure.policymgr.clientssl.keystore.password", value: "{{ security_password }}" }
+    - { key: "xasecure.policymgr.clientssl.truststore", value: "/etc/security/serverKeys/jks/kafka_truststore.jks" }
+    - { key: "xasecure.policymgr.clientssl.truststore.password", value: "{{ security_password }}" }
+  when: "'AMBARI_SERVER' in group_names"
 
-      - uri:
-          url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}
-          method: PUT
-          validate_certs: no
-          force_basic_auth: yes
-          user: "{{ ambari_admin_user }}"
-          password: "{{ ambari_admin_password }}"
-          headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
-          body: "{{ lookup('file','kafka-log4j') }}"
-          body_format: json
-          timeout: 120
-          return_content: yes
-          status_code: 200,201,202
+- name: Enable Kafka-plugin in ranger
+  block:
+    - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-kafka-plugin-properties --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
+      with_items:
+        - { key: "ranger-kafka-plugin-enabled", value: "Yes" }
+    - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-env --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
+      with_items:
+        - { key: "ranger-kafka-plugin-enabled", value: "Yes" }
+  when: "'AMBARI_SERVER' in group_names"
 
-      - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=ranger-env --key={{ item.key }} --value={{ item.value }}"
-        with_items:
-          - { key: "ranger-kafka-plugin-enabled", value: "Yes" }
-    when: "'AMBARI_SERVER' in group_names"
+- name: "Restart all services with stale configuration"
+  uri:
+    url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/requests
+    method: POST
+    validate_certs: no
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"Restart all services with stale configuration via REST","operational_level": "host_component","command": "RESTART"},"Requests/resource_filters": [{"hosts_predicate": "HostRoles/stale_configs=true&HostRoles/cluster_name={{ hostvars[inventory_hostname].cluster_name }}"}]}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  register: returned_from_cluster
+  until: returned_from_cluster.status == 202
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
 
-  - name: "Restart all services with stale configuration"
-    uri:
-      url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/requests
-      method: POST
-      validate_certs: no
-      force_basic_auth: yes
-      user: "{{ ambari_admin_user }}"
-      password: "{{ ambari_admin_password }}"
-      headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
-      body: {"RequestInfo":{"context":"Restart all services with stale configuration via REST","operational_level": "host_component","command": "RESTART"},"Requests/resource_filters": [{"hosts_predicate": "HostRoles/stale_configs=true&HostRoles/cluster_name={{ hostvars[inventory_hostname].cluster_name }}"}]}
-      body_format: json
-      timeout: 120
-      return_content: yes
-      status_code: 200,201,202
-    register: returned_from_cluster
-    until: returned_from_cluster.status == 202
-    retries: 300
-    delay: 1
-    when: "'AMBARI_SERVER' in group_names"
-  
-  - name: "Waiting for all services will restart"
-    uri:
-      url: "{{ returned_from_cluster.json.href }}"
-      validate_certs: no
-      force_basic_auth: yes
-      user: "{{ ambari_admin_user }}"
-      password: "{{ ambari_admin_password }}"
-      headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
-      status_code: 200,201,202
-      return_content: yes
-    register: cluster_check_task
-    until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
-    retries: 600
-    delay: 1
-    when: "'AMBARI_SERVER' in group_names"
+- name: "Waiting for all services will restart"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    validate_certs: no
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 600
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Configure SSL for Kafka"
+  block:
+    - shell: "/var/lib/ambari-server/resources/scripts/configs.py {{ general_configpy_args }} --config-type=kafka-broker --key={{ item.key }} --value={{ item.value }} --version-note={{ item.key }}"
+      with_items:
+        - { key: "listeners", value: "SASL_SSL://localhost:6670" } 
+        - { key: "port", value: "6670" } 
+        - { key: "security.inter.broker.protocol", value: "SASL_SSL" } 
+        - { key: "ssl.keystore.location", value: "/etc/security/serverKeys/jks/kafka_keystore.jks" } 
+        - { key: "ssl.keystore.password", value: "{{ security_password }}" } 
+        - { key: "ssl.truststore.location", value: "/etc/security/serverKeys/jks/kafka_truststore.jks" } 
+        - { key: "ssl.truststore.password", value: "{{ security_password }}" } 
+        - { key: "ssl.key.password", value: "{{ security_password }}" } 
+        - { key: "security.protocol", value: "SSL" } 
+        - { key: "ssl.client.auth", value: "none" } 
+        - { key: "ssl.enable.protocols", value: "TLSv1.2,TLSv1.1,TLSv1" } 
+        - { key: "ssl.keystore.type", value: "JKS" } 
+        - { key: "ssl.truststore.type", value: "JKS" } 
+        - { key: "authorizer.class.name", value: "org.apache.ranger.authorization.kafka.authorizer.RangerKafkaAuthorizer" } 
+
+    - uri:
+        url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}
+        method: PUT
+        validate_certs: no
+        force_basic_auth: yes
+        user: "{{ ambari_admin_user }}"
+        password: "{{ ambari_admin_password }}"
+        headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+        body: "{{ lookup('file','kafka-log4j') }}"
+        body_format: json
+        timeout: 120
+        return_content: yes
+        status_code: 200,201,202
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Restart all services with stale configuration"
+  uri:
+    url: https://{{ inventory_hostname }}:8443/api/v1/clusters/{{ hostvars[inventory_hostname].cluster_name }}/requests
+    method: POST
+    validate_certs: no
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"text/plain"}'
+    body: {"RequestInfo":{"context":"Restart all services with stale configuration via REST","operational_level": "host_component","command": "RESTART"},"Requests/resource_filters": [{"hosts_predicate": "HostRoles/stale_configs=true&HostRoles/cluster_name={{ hostvars[inventory_hostname].cluster_name }}"}]}
+    body_format: json
+    timeout: 120
+    return_content: yes
+    status_code: 200,201,202
+  register: returned_from_cluster
+  until: returned_from_cluster.status == 202
+  retries: 300
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"
+
+- name: "Waiting for all services will restart"
+  uri:
+    url: "{{ returned_from_cluster.json.href }}"
+    validate_certs: no
+    force_basic_auth: yes
+    user: "{{ ambari_admin_user }}"
+    password: "{{ ambari_admin_password }}"
+    headers: '{"X-Requested-By":"ambari", "Content-Type":"application/json"}'
+    status_code: 200,201,202
+    return_content: yes
+  register: cluster_check_task
+  until: (((cluster_check_task.content|from_json).Requests.request_status == 'COMPLETED' and (cluster_check_task.content|from_json).Requests.completed_task_count|int > 0))
+  retries: 600
+  delay: 1
+  when: "'AMBARI_SERVER' in group_names"

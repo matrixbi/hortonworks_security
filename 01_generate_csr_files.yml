@@ -1,18 +1,12 @@
----
-- name: Create folder for csr files
-  connection: local
-  hosts: localhost
-  become: yes
-  tasks:
-  - name: Create a new folder to save the csr & keystore files
-    file:
-      path: "{{ item }}"
-      state: directory
-      mode: 0755
-    with_items:
-      - /home/dba/ssl/csr
-      - /home/dba/ssl/certs
-      - /home/dba/ssl/jks
+- name: Create a new folder to save the csr & keystore files
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - /home/dba/ssl/csr
+    - /home/dba/ssl/certs
+    - /home/dba/ssl/jks
 
 #- name: Create csr file and send it to ansible server
 #  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
@@ -29,10 +23,10 @@
 #      - /etc/security/serverKeys/certs
 #
 #  - name: Create Keystore (contain the private key with alias)
-#    shell: keytool -genkeypair -keystore /etc/security/serverKeys/jks/$(hostname -f)-keystore.jks -storepass Big_59_Data -alias $(hostname -f) -keypass Big_59_Data -dname "CN=$(hostname -f)" -keyalg RSA -validity 3650 -keysize 2048
+#    shell: keytool -genkeypair -keystore /etc/security/serverKeys/jks/$(hostname -f)-keystore.jks -storepass {{ security_password }} -alias $(hostname -f) -keypass {{ security_password }} -dname "CN=$(hostname -f)" -keyalg RSA -validity 3650 -keysize 2048
 #
 #  - name: Generate the CSR files (The CSR contains the matching public key and other information like your organization's name)
-#    shell: keytool -certreq -keystore /etc/security/serverKeys/jks/$(hostname -f)-keystore.jks -storepass  Big_59_Data -alias $(hostname -f) -file /etc/security/serverKeys/csr/$(hostname -f).csr -ext "san=dns:$(hostname -f),dns:$(hostname)"
+#    shell: keytool -certreq -keystore /etc/security/serverKeys/jks/$(hostname -f)-keystore.jks -storepass {{ security_password }} -alias $(hostname -f) -file /etc/security/serverKeys/csr/$(hostname -f).csr -ext "san=dns:$(hostname -f),dns:$(hostname)"
 #
 #  - name: set variable
 #    shell: echo $(hostname -f)

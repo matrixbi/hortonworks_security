@@ -1,0 +1,69 @@
+- name: Create csr file and send it to ansible server
+  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
+  become: yes
+  vars_files:
+    - passwords.yml
+  vars:
+    ambari_admin_user: "admin"
+    ambari_admin_password: "{{ ambari_admin_password }}"
+    ranger_admin_user: "admin"
+    ranger_admin_password: "{{ ranger_admin_password }}"
+    default_ranger_user_password: "P@ssword"
+    ldap_ou_admin_principal: "some_user@MAC.ORG.IL"
+    ldap_ou_admin_password: "{{ ldap_ou_admin_password }}"
+    security_password: "{{ security_password }}"
+    nifi_policy_name: "HDF_ENV_nifi"
+    ldap_domain: "example.org.il"
+    realm: "{{ ldap_domain|upper }}"
+    encryption_types: "aes des3-cbc-sha1 rc4 des-cbc-md5"
+    domains: ""
+    domain: "{{ realm }}"
+    kdc_host: "{{ ldap_domain }}"
+    admin_server_host: "{{ kdc_host }}"
+    ldap_url: "ldaps://ldap.example.org.il:636"
+    ldap_port: 6182
+    ldap_user_name_attribute: "cn"
+    ldap_group_object_class: "group"
+    ldap_group_name_attribute: "sAMAccountName"
+    ldap_group_member_attribute: "member"
+    ldap_user_groupname_attribute: "sAMAccountName"
+    ldap_ou_admin_user_dn: 'CN=some_user,OU=org_unit,OU=Servers,OU=Non-Prod\ Environments,DC=example,DC=org,DC=il'
+    ldap_ou_for_hortonworks_with_space: 'OU=org_unit,OU=Servers,OU=Non-Prod Environments,DC=example,DC=org,DC=il'
+    ldap_ou_for_hortonworks: 'OU=org_unit,OU=Servers,OU=Non-Prod\ Environments,DC=example,DC=org,DC=il'
+    ldap_users_ou: 'OU=org_unit,OU=Center,DC=mac,DC=org,DC=il'
+    ldap_groups_ou: 'OU=org_unit,OU=Service\ Account\ Users,DC=example,DC=org,DC=il'
+    ldap_user_DNs: '{{ ldap_ou_for_hortonworks }}\;{{ ldap_users_ou }}'
+    ldap_group_DNs: '{{ ldap_ou_for_hortonworks }}\;{{ ldap_groups_ou }}'
+  tasks:
+  - name: Install kerberos
+    include: 00_kerberos.yml
+
+  - name: Generate CSR files
+    include: 01_generate_csr_files.yml
+
+  - name: Prepare nodes for SSL setup
+    include: 02_general_ssl_setup.yml
+
+  - name: Install SSL on Ambari
+    include: 03_ambari_ssl_configuration.yml
+
+  - name: Install SSL on Infra Solr
+    include: 04_Infra_Solr_SSL_conf.yml
+
+  - name: Install SSL on Ambari Metrics and Grafana
+    include: 05_Ambari_Metrics_Grafana_SSL_conf.yml
+
+  - name: Install SSL on Ranger
+    include: 06_Ranger_SSL_conf.yml
+
+  - name: Install SSL on Kafka
+    include: 07_Kafka_SSL_conf.yml
+
+  - name: Install SSL on Schema Registry
+    include: 08_Schema_Registry_SSL_Conf.yml
+
+  - name: Install SSL on NiFi
+    include: 09_NiFi_SSL_conf.yml
+
+  - name: Install SSL on NiFi Registry
+    include: 10_NiFi_Registry_SSL_conf.yml
