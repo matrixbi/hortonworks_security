@@ -9,7 +9,7 @@
     - /home/dba/ssl/jks
 
 #- name: Create csr file and send it to ansible server
-#  hosts: HDF-cluster-sys
+#  hosts: WHOLE-CLUSTER-ANSIBLE-GROUP
 #  become: yes
 #  tasks:
 #  - name: Create a new folder to save the csr & keystore files
